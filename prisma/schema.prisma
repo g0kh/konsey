@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  DOCTOR
+  READONLY
+}
+
+enum PresentationStatus {
+  PENDING
+  IN_COUNCIL
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  firstName    String
+  lastName     String
+  name         String
+  username     String   @unique
+  passwordHash String
+  branch                 String
+  phone                  String?
+  preferredCouncilTypes  String[] @default([])
+  role                   UserRole @default(DOCTOR)
+  isActive               Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions               AuthSession[]
+  submittedPresentations CouncilPresentation[] @relation("SubmittedBy")
+  decisionPresentations  CouncilPresentation[] @relation("DecisionBy")
+  createdSessions        CouncilSession[]
+  requestedConsults      QuickConsult[]        @relation("ConsultRequestedBy")
+  respondedConsults      QuickConsult[]        @relation("ConsultRespondedBy")
+  branchComments         BranchComment[]
+  supplementaryOpinions  SupplementaryOpinion[]
+  adminAuditLogs         AdminAuditLog[]
+  sessionAttendances     CouncilSessionAttendee[]
+  presentationAttendances PresentationAttendee[]
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
+model Patient {
+  id        String    @id @default(cuid())
+  firstName String
+  lastName  String
+  tcNo      String    @unique
+  birthDate DateTime?
+  gender    String?
+  diagnosis String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  presentations CouncilPresentation[]
+}
+
+model CouncilPresentation {
+  id                      String             @id @default(cuid())
+  patientId               String
+  patient                 Patient            @relation(fields: [patientId], references: [id])
+  submittedByUserId       String
+  submittedBy             User               @relation("SubmittedBy", fields: [submittedByUserId], references: [id])
+  councilType             String
+  presentationReason      String
+  clinicalSummary         String?
+  currentTreatment        String?
+  petScanNote             String?
+  mrNote                  String?
+  ctNote                  String?
+  pathologyNote           String?
+  memeUsgNote             String?
+  imagingNote             String?
+  status                  PresentationStatus @default(PENDING)
+  councilDate             DateTime?
+  councilDecision         String?
+  councilDecisionByUserId String?
+  councilDecisionBy       User?              @relation("DecisionBy", fields: [councilDecisionByUserId], references: [id])
+  councilDecisionAt       DateTime?
+  adminNotes              String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  sessionLinks   CouncilSessionPresentation[]
+  quickConsults  QuickConsult[]
+  branchComments        BranchComment[]
+  supplementaryOpinions SupplementaryOpinion[]
+  attendees             PresentationAttendee[]
+
+  @@index([councilType, status, createdAt])
+}
+
+model QuickConsult {
+  id                String   @id @default(cuid())
+  presentationId    String
+  presentation      CouncilPresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  requestedByUserId String
+  requestedBy       User     @relation("ConsultRequestedBy", fields: [requestedByUserId], references: [id])
+  targetBranch      String
+  question          String
+  response          String?
+  respondedByUserId String?
+  respondedBy       User?    @relation("ConsultRespondedBy", fields: [respondedByUserId], references: [id])
+  respondedAt       DateTime?
+  parentConsultId   String?
+  parentConsult     QuickConsult?  @relation("ConsultFollowUps", fields: [parentConsultId], references: [id], onDelete: Cascade)
+  followUps         QuickConsult[] @relation("ConsultFollowUps")
+  createdAt         DateTime @default(now())
+
+  @@index([parentConsultId])
+  @@index([requestedByUserId])
+  @@index([targetBranch, response])
+}
+
+model BranchComment {
+  id             String   @id @default(cuid())
+  presentationId String
+  presentation   CouncilPresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  authorUserId   String
+  author         User     @relation(fields: [authorUserId], references: [id])
+  branch         String
+  content        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model SupplementaryOpinion {
+  id             String              @id @default(cuid())
+  presentationId String
+  presentation   CouncilPresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  authorUserId   String
+  author         User                @relation(fields: [authorUserId], references: [id])
+  branch         String
+  content        String
+  createdAt      DateTime            @default(now())
+
+  @@index([presentationId, createdAt])
+}
+
+model CouncilSession {
+  id              String   @id @default(cuid())
+  councilType     String
+  sessionDate     DateTime
+  createdByUserId String
+  createdBy       User     @relation(fields: [createdByUserId], references: [id])
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  presentations CouncilSessionPresentation[]
+  attendees     CouncilSessionAttendee[]
+
+  @@index([councilType, sessionDate])
+}
+
+model CouncilSessionAttendee {
+  sessionId String
+  session   CouncilSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User           @relation(fields: [userId], references: [id])
+  createdAt DateTime       @default(now())
+
+  @@id([sessionId, userId])
+  @@index([sessionId])
+}
+
+model PresentationAttendee {
+  id             String              @id @default(cuid())
+  presentationId String
+  presentation   CouncilPresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                @relation(fields: [userId], references: [id])
+  nameSnapshot   String
+  branchSnapshot String
+  createdAt      DateTime            @default(now())
+
+  @@unique([presentationId, userId])
+  @@index([presentationId])
+}
+
+model CouncilSessionPresentation {
+  sessionId      String
+  session        CouncilSession      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  presentationId String
+  presentation   CouncilPresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  orderIndex     Int
+
+  @@id([sessionId, presentationId])
+  @@index([sessionId, orderIndex])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  details    String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+}

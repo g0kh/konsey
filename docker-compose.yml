@@ -1,0 +1,62 @@
+services:
+  konsey-db:
+    image: postgres:16
+    container_name: konsey-db
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: onkoloji_konsey
+      POSTGRES_USER: konsey_user
+      POSTGRES_PASSWORD: konsey_pass
+    volumes:
+      - konsey-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U konsey_user -d onkoloji_konsey"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Geliştirme: tüm uygulama Docker içinde (profile: docker-dev)
+  konsey-app:
+    profiles: ["docker-dev"]
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: konsey-app
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      DATABASE_URL: postgresql://konsey_user:konsey_pass@konsey-db:5432/onkoloji_konsey
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      konsey-db:
+        condition: service_healthy
+
+  # Production: optimize edilmiş build (profile: prod)
+  konsey-app-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: konsey-app-prod
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      DATABASE_URL: postgresql://konsey_user:konsey_pass@konsey-db:5432/onkoloji_konsey
+      NODE_ENV: production
+      AUTH_SECRET: ${AUTH_SECRET:-onkoloji-konsey-prod-secret-degistirin}
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      konsey-db:
+        condition: service_healthy
+
+volumes:
+  konsey-db-data:
